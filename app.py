@@ -6,23 +6,15 @@ import numpy as np
 
 # 1. Веб-беттің негізгі баптаулары
 st.set_page_config(
-    page_title="Код Плагиат Антивирус", 
-    page_icon="🖥️", 
+    page_title="Камерамен Код Тексеру", 
+    page_icon="📸", 
     layout="wide"
 )
 
-# Стильдерді әдемілеу (CSS)
-st.markdown("""
-    <style>
-    .reportview-container { background: #f0f2f6; }
-    .stProgress > div > div > div > div { background-color: #4CAF50; }
-    </style>
-    """, unsafe_allow_html=True)
+st.title("📸 Камера арқылы Python Кодтарын Тексеру Панелі")
+st.write("🧑‍🏫 **Нұсқаулық:** Оқушылардың жұмысын камерамен тікелей суретке түсіріңіз немесе дайын файлдарды жүктеңіз. Жүйе оларды өзара салыстырады.")
 
-st.title("🖥️ Python Кодтарының Плагиатын Тексеру Веб-Панелі")
-st.write("🧑‍🏫 **Мұғалімдерге арналған құрал:** Оқушылардың жұмыс суреттерін бірден белгілеп жүктеңіз. Жүйе оларды өзара салыстырып, көшіргендерді анықтайды.")
-
-# 2. Суреттен мәтін оқитын (OCR) модельді іске қосу (Жылдам жұмыс істеу үшін кэштеледі)
+# 2. OCR Модельді іске қосу (Кэштеу)
 @st.cache_resource
 def load_ocr_model():
     return easyocr.Reader(['en'])
@@ -32,66 +24,94 @@ try:
 except Exception as e:
     st.error(f"OCR Моделін жүктеу қатесі: {e}")
 
-# 3. Файлдарды қабылдау бөлімі
-st.sidebar.header("⚙️ Басқару панелі")
+# 3. Басқару панелі (Сол жақта)
+st.sidebar.header("⚙️ Баптаулар")
 similarity_threshold = st.sidebar.slider("🔴 Қауіпті деңгей шегі (%)", min_value=50, max_value=100, value=75)
 warning_threshold = st.sidebar.slider("🟡 Ескерту деңгейі шегі (%)", min_value=30, max_value=50, value=45)
 
-uploaded_files = st.file_uploader(
-    "Оқушылардың код түсірілген суреттерін таңдаңыз (Бірнешеуін бірге белгілеуге болады)", 
-    type=["jpg", "png", "jpeg"], 
-    accept_multiple_files=True
-)
+# Сессияны сақтау (Камерамен суретке кезекпен түсіргенде ескі суреттер өшіп қалмауы үшін)
+if "student_database" not in st.session_state:
+    st.session_state.student_database = {}
 
-# 4. Басты логика және есептеулер
-if uploaded_files:
-    if len(uploaded_files) < 2:
-        st.info("💡 Салыстыру жүргізу үшін кем дегенде **2 оқушының суретін** жүктеуіңіз керек.")
+# 4. СҮРЕТТІ ҚАБЫЛДАУДЫҢ ЕКІ ЖОЛЫ (Камера немесе Файл)
+tabs = st.tabs(["📷 Тікелей Камерамен түсіру", "📁 Дайын файлдарды жаппай жүктеу"])
+
+# --- 1-ТАБ: КАМЕРАМЕН ТҮСІРУ ---
+with tabs[0]:
+    st.subheader("Оқушының жұмысын камераға түсіру")
+    
+    # Оқушының атын енгізу
+    student_name_input = st.text_input("Оқушының аты-жөнін жазыңыз (мысалы: Асан, Үсен):", key="name_input")
+    
+    # Камера элементі
+    camera_file = st.camera_input("Кодты суретке түсіріңіз")
+    
+    if camera_file and student_name_input:
+        if st.button("📸 Осы суретті базаға қосу"):
+            student_name = student_name_input.strip()
+            
+            # Суретті өңдеу
+            img = Image.open(camera_file)
+            img_np = np.array(img)
+            
+            # Мәтінді тану
+            with st.spinner(f"{student_name} коды өңделуде..."):
+                result = reader.readtext(img_np, detail=0)
+                detected_code = "\n".join(result)
+                
+                # Базаға сақтау
+                st.session_state.student_database[student_name] = detected_code
+                st.success(f"✅ {student_name} жұмысы базаға сәтті қосылды!")
+
+# --- 2-ТАБ: ФАЙЛДАРДЫ ЖҮКТЕУ ---
+with tabs[1]:
+    st.subheader("Дайын файлдарды компьютерден жүктеу")
+    uploaded_files = st.file_uploader(
+        "Файлдарды таңдаңыз (Файл аты оқушының аты болуы керек)", 
+        type=["jpg", "png", "jpeg"], 
+        accept_multiple_files=True
+    )
+    
+    if uploaded_files:
+        if st.button("📁 Файлдарды базаға енгізу"):
+            for file in uploaded_files:
+                img = Image.open(file)
+                img_np = np.array(img)
+                result = reader.readtext(img_np, detail=0)
+                detected_code = "\n".join(result)
+                
+                s_name = file.name.split('.')[0]
+                st.session_state.student_database[s_name] = detected_code
+            st.success(f"✅ {len(uploaded_files)} файл базаға қосылды!")
+
+# --- 5. БАЗАНЫ КӨРУ ЖӘНЕ ТАЗАЛАУ ---
+if st.session_state.student_database:
+    st.sidebar.write("---")
+    st.sidebar.subheader("🗂️ Базадағы оқушылар:")
+    for name in st.session_state.student_database.keys():
+        st.sidebar.write(f"- {name}")
+        
+    if st.sidebar.button("🗑️ Базаны толық тазалау"):
+        st.session_state.student_database = {}
+        st.rerun()
+
+    # --- 6. ПЛАГИАТТЫ ЕСЕПТЕУ (ALL-TO-ALL) ---
+    st.markdown("---")
+    st.header("📊 Салыстыру қорытындысы")
+    
+    current_db = st.session_state.student_database
+    student_names = list(current_db.keys())
+    
+    if len(student_names) < 2:
+        st.info("💡 Салыстыруды бастау үшін базада кем дегенде **2 оқушының жұмысы** болуы керек. Тағы бір сурет қосыңыз.")
     else:
-        st.success(f"📚 Жүйеге {len(uploaded_files)} оқушының жұмысы қабылданды.")
-        
-        # Контейнерлер құру
-        database = {}
-        progress_bar = st.progress(0)
-        status_text = st.empty()
-        
-        # СҮРЕТТЕРДЕН КОДТЫ ШЫҒАРУ ЖӘНЕ ТАЗАЛАУ
-        for idx, file in enumerate(uploaded_files):
-            status_text.text(f"⏳ Сурет өңделуде ({idx+1}/{len(uploaded_files)}): {file.name}")
-            
-            try:
-                # Суретті оқу
-                image = Image.open(file)
-                image_np = np.array(image)
-                
-                # OCR арқылы кодты мәтінге айналдыру
-                result = reader.readtext(image_np, detail=0)
-                raw_code = "\n".join(result)
-                
-                # Файл атауынан оқушының атын алу (мысалы, 'Асан.jpg' -> 'Асан')
-                student_name = file.name.split('.')[0]
-                database[student_name] = raw_code
-                
-            except Exception as e:
-                st.error(f"❌ {file.name} файлын оқу мүмкін болмады: {e}")
-            
-            # Прогресс жолағын жаңарту
-            progress_bar.progress((idx + 1) / len(uploaded_files))
-            
-        status_text.text("✅ Барлық суреттер сәтті өңделді! Плагиат деңгейін есептеу басталды...")
-        progress_bar.empty()
-        
-        # БАРЛЫҚ КОДТАРДЫ ӨЗАРА САЛЫСТЫРУ (ALL-TO-ALL)
         results_list = []
-        student_names = list(database.keys())
-        
         for i in range(len(student_names)):
             for j in range(i + 1, len(student_names)):
                 name1 = student_names[i]
                 name2 = student_names[j]
                 
-                # Екі мәтінді салыстыру алгоритмі
-                matcher = difflib.SequenceMatcher(None, database[name1], database[name2])
+                matcher = difflib.SequenceMatcher(None, current_db[name1], current_db[name2])
                 similarity = matcher.ratio() * 100
                 
                 results_list.append({
@@ -100,32 +120,22 @@ if uploaded_files:
                     "similarity": round(similarity, 2)
                 })
                 
-        # Нәтижелерді ұқсастық пайызы бойынша жоғарыдан төмен қарай сұрыптау
         results_list = sorted(results_list, key=lambda x: x['similarity'], reverse=True)
         
-        # 5. НӘТИЖЕНІ ЭКРАНҒА ӘДЕМІ ШЫҒАРУ
-        st.subheader("📊 Салыстыру қорытындысы және Көшіру Рейтингі")
-        
+        # Нәтижелерді шығару
         for res in results_list:
-            # Тексеру пайызына байланысты визуалды безендіру
             if res['similarity'] >= similarity_threshold:
-                # 🔴 ҚАУІПТІ ДЕҢГЕЙ
-                st.error(f"🚨 **ҚАУІПТІ:** **{res['student1']}** және **{res['student2']}** кодтарында өте жоғары ұқсастық бар! **Ұқсастық: {res['similarity']}%**")
+                st.error(f"🚨 **ҚАУІПТІ:** **{res['student1']}** және **{res['student2']}** — **Ұқсастық: {res['similarity']}%**")
             elif res['similarity'] >= warning_threshold:
-                # 🟡 ЕСКЕРТУ ДЕҢГЕЙІ
-                st.warning(f"⚠️ **ЕСКЕРТУ:** **{res['student1']}** және **{res['student2']}** кодтарында жартылай сәйкестік бар. **Ұқсастық: {res['similarity']}%**")
+                st.warning(f"⚠️ **ЕСКЕРТУ:** **{res['student1']}** және **{res['student2']}** — **Ұқсастық: {res['similarity']}%**")
             else:
-                # 🟢 ҚАЛЫПТЫ ДЕҢГЕЙ
-                st.success(f"✅ **ҚАЛЫПТЫ:** **{res['student1']}** мен **{res['student2']}** жұмыстары өзгеше. **Ұқсастық: {res['similarity']}%**")
+                st.success(f"✅ **ҚАЛЫПТЫ:** **{res['student1']}** мен **{res['student2']}** — **Ұқсастық: {res['similarity']}%**")
                 
-            # Екі оқушының кодын қатар қойып салыстыру терезесі (Спойлер)
-            with st.expander(f"🔍 {res['student1']} және {res['student2']} кодтарын ашып қарау"):
+            with st.expander(f"🔍 {res['student1']} және {res['student2']} кодтарын салыстыру"):
                 col1, col2 = st.columns(2)
                 with col1:
                     st.subheader(f"👤 {res['student1']} коды:")
-                    st.code(database[res['student1']], language="python")
+                    st.code(current_db[res['student1']], language="python")
                 with col2:
                     st.subheader(f"👤 {res['student2']} коды:")
-                    st.code(database[res['student2']], language="python")
-        
-        status_text.text("🎉 Тексеру толық аяқталды!")
+                    st.code(current_db[res['student2']], language="python")
