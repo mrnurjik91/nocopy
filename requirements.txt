@@ -1,9 +1,6 @@
 streamlit
-easyocr
-pillow
-numpy
 pandas
+numpy
 matplotlib
 scikit-learn
 requests
-torch --index-url https://pytorch.org
