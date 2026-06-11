@@ -7,15 +7,15 @@ import re
 
 # 1. Веб-беттің негізгі баптаулары
 st.set_page_config(
-    page_title="Камерамен код тексеру", 
+    page_title="Академиялық адалдық: Код тексеру", 
     page_icon="📸", 
     layout="wide"
 )
 
-st.title("📸 Камера арқылы Python кодтарын тексеру панелі")
-st.write("🧑‍🏫 **Нұсқаулық:** Оқушылардың жұмысын камерамен тікелей суретке түсіріңіз немесе дайын файлдарды жүктеңіз. Жүйе оларды өзара салыстырады.")
+st.title("📸 Камера және Файлдар арқылы Python кодтарын тексеру панелі")
+st.write("🧑‍🏫 **Жобаның мақсаты:** Оқушылар арасындағы академиялық адалдықты сақтау, плагиатты анықтау және кодтарды әділ салыстыру.")
 
-# 2. OCR Модельді іске қосу (Кэштеу)
+# 2. OCR Модельді іске қосу (Кэштеу - жылдам жұмыс істеу үшін)
 @st.cache_resource
 def load_ocr_model():
     return easyocr.Reader(['en'])
@@ -27,18 +27,16 @@ except Exception as e:
 
 # --- КӨМЕКШІ ФУНКЦИЯЛАР ---
 
-# А. Суретті тазалау және контрастын арттыру
+# А. Суретті тазалау және анықтығын арттыру (Камера мен СҮРЕТТЕР үшін)
 def preprocess_image(pil_image):
-    # 1. Суретті ақ-қара (серый деңгейге) айналдыру
     gray_img = ImageOps.grayscale(pil_image)
-    # 2. Мәтін мен артқы фон анық бөлінуі үшін контрасты 2.5 есе арттыру
     enhancer = ImageEnhance.Contrast(gray_img)
     enhanced_img = enhancer.enhance(2.5)
     return enhanced_img
 
 # Ә. Кодты плагиатқа тексермес бұрын нормализациялау (тазалау)
 def normalize_python_code(code_str):
-    # 1. Комментарийлерді өшіру (# таңбасынан басталатын)
+    # 1. Комментарийлерді өшіру (# таңбасынан басталатын жолдар)
     code_str = re.sub(r'#.*', '', code_str)
     # 2. Артық бос жолдар мен шеткі бос орындарды тазалау
     lines = [line.strip() for line in code_str.split('\n') if line.strip()]
@@ -50,29 +48,41 @@ st.sidebar.header("⚙️ Баптаулар")
 similarity_threshold = st.sidebar.slider("🔴 Қауіпті деңгей шегі (%)", min_value=50, max_value=100, value=75)
 warning_threshold = st.sidebar.slider("🟡 Ескерту деңгейі шегі (%)", min_value=30, max_value=50, value=45)
 
+# Сессияны іске қосу
 if "student_database" not in st.session_state:
     st.session_state.student_database = {}
 
-# 4. СҮРЕТТІ ЖӘНЕ КОДТЫ ҚАБЫЛДАУДЫҢ ҮШ ЖОЛЫ
+# 4. ДЕРЕКТЕРДІ ҚАБЫЛДАУДЫҢ 4 ТҮРЛІ ЖОЛЫ (ТАБТАР)
 tabs = st.tabs([
     "📷 Тікелей Камерамен түсіру", 
-    "📁 Дайын файлдарды жаппай жүктеу", 
-    "💻 Оқушының өз кодын енгізуі"
+    "📁 Сурет файлдарын жүктеу", 
+    "📄 .py / .txt файлдарын жүктеу",
+    "💻 Оқушының өз кодын жазуы"
 ])
 
-# --- 1-ТАБ: КАМЕРАМЕН ТҮСІРУ ---
+# --- 1-ТАБ: ТЕЛЕФОН КАМЕРАСЫ НЕМЕСЕ ГАЛЕРИЯ (ЖАҢАРТЫЛҒАН) ---
 with tabs[0]:
-    st.subheader("Оқушының жұмысын камераға түсіру")
+    st.subheader("📱 Телефон камерасымен түсіру немесе Галереядан таңдау")
+    st.info("💡 Смартфонмен кірсеңіз, төмендегі батырманы басқанда телефонның өз камерасы немесе галереясы ашылады.")
+    
     student_name_input = st.text_input("Оқушының аты-жөнін жазыңыз (мысалы: Асан, Үсен):", key="name_input")
-    camera_file = st.camera_input("Кодты суретке түсіріңіз")
+    
+    # st.camera_input-ті файл жүктеушіге ауыстырдық, бірақ ұялы телефондар үшін баптадық
+    camera_file = st.file_uploader(
+        "📷 Суретке тікелей түсіріңіз немесе Галереядан жүктеңіз", 
+        type=["jpg", "png", "jpeg"],
+        key="mobile_camera_uploader"
+    )
     
     if camera_file and student_name_input:
         student_name = student_name_input.strip()
         session_key = f"raw_ocr_{student_name}"
+        
         if session_key not in st.session_state:
             raw_img = Image.open(camera_file)
             processed_img = preprocess_image(raw_img)
             img_np = np.array(processed_img)
+            
             with st.spinner(f"{student_name} коды өңделуде..."):
                 result = reader.readtext(img_np, detail=0)
                 st.session_state[session_key] = "\n".join(result)
@@ -89,19 +99,19 @@ with tabs[0]:
             st.success(f"✅ {student_name} жұмысы сақталды!")
             del st.session_state[session_key]
             st.rerun()
-
-# --- 2-ТАБ: ФАЙЛДАРДЫ ЖҮКТЕУ ---
+# --- 2-ТАБ: СУРЕТ ФАЙЛДАРЫН ЖҮКТЕУ ---
 with tabs[1]:
-    st.subheader("Дайын файлдарды компьютерден жүктеу")
-    uploaded_files = st.file_uploader(
-        "Файлдарды таңдаңыз (Файл аты оқушының аты болуы керек)", 
+    st.subheader("Дайын сурет файлдарын компьютерден жүктеу")
+    uploaded_images = st.file_uploader(
+        "Суреттерді таңдаңыз (Файл аты оқушының аты болуы керек)", 
         type=["jpg", "png", "jpeg"], 
-        accept_multiple_files=True
+        accept_multiple_files=True,
+        key="image_uploader"
     )
     
-    if uploaded_files:
-        if st.button("📁 Файлдарды өңдеу және енгізу"):
-            for file in uploaded_files:
+    if uploaded_images:
+        if st.button("📁 Суреттерді өңдеу және енгізу"):
+            for file in uploaded_images:
                 raw_img = Image.open(file)
                 processed_img = preprocess_image(raw_img)
                 img_np = np.array(processed_img)
@@ -110,30 +120,55 @@ with tabs[1]:
                 cleaned_code = normalize_python_code(detected_code)
                 s_name = file.name.split('.')[0]
                 st.session_state.student_database[s_name] = cleaned_code
-            st.success(f"✅ {len(uploaded_files)} файл нормализацияланып базаға қосылды!")
+            st.success(f"✅ {len(uploaded_images)} сурет файл базаға қосылды!")
             st.rerun()
 
-# --- 3-ТАБ: ОҚУШЫНЫҢ ӨЗ КОДЫН ТІКЕЛЕЙ ЕНГІЗУІ (ЖАҢА) ---
+# --- 3-ТАБ: .PY НЕПЕСЕ .TXT ФАЙЛДАРЫН ЖҮКТЕУ (ЖАҢА) ---
 with tabs[2]:
-    st.subheader("🧑‍🎓 Оқушының өз кодын мәтін түрінде енгізу терезесі")
-    st.info("💡 Мұнда оқушы өз кодын тікелей жаза алады немесе IDLE/VS Code-тан көшіріп қоя алады.")
+    st.subheader("📄 Python (.py) немесе Мәтіндік (.txt) файлдарды жаппай жүктеу")
+    st.info("💡 Файл атауы оқушының аты-жөні болуы керек. Мысалы: Мадияр.py немесе Аружан.txt")
     
-    student_name_direct = st.text_input("Аты-жөніңізді енгізіңіз (мысалы: Әлихан):", key="name_direct")
-    direct_code = st.text_area("Кодыңызды осы жерге жазыңыз немесе қойыңыз:", height=250, key="code_direct")
+    uploaded_code_files = st.file_uploader(
+        "Код файлдарын таңдаңыз (.py, .txt)", 
+        type=["py", "txt"], 
+        accept_multiple_files=True,
+        key="code_file_uploader"
+    )
+    
+    if uploaded_code_files:
+        if st.button("📄 Файлдарды оқу және базаға енгізу"):
+            for file in uploaded_code_files:
+                try:
+                    # Файлды цифрлық мәтін түрінде оқу (декодтау)
+                    file_contents = file.read().decode("utf-8")
+                    
+                    # Кодты тазалау
+                    cleaned_code = normalize_python_code(file_contents)
+                    
+                    # Файл форматын алып тастап, тек оқушының атын сақтау
+                    s_name = file.name.split('.')[0]
+                    st.session_state.student_database[s_name] = cleaned_code
+                except Exception as e:
+                    st.error(f"❌ {file.name} файлын оқу кезінде қате шықты: {e}")
+            
+            st.success(f"✅ {len(uploaded_code_files)} код файлы базаға сәтті қосылды!")
+            st.rerun()
+
+# --- 4-ТАБ: ОҚУШЫНЫҢ ӨЗ КОДЫН ТІКЕЛЕЙ ЕНГІЗУІ ---
+with tabs[3]:
+    st.subheader("🧑‍🎓 Оқушының өз кодын мәтін түрінде енгізу терезесі")
+    student_name_direct = st.text_input("Аты-жөніңізді енгізіңіз:", key="name_direct")
+    direct_code = st.text_area("Кодыңызды осы жерге жазыңыз немесе қойыңыз (Copy-Paste):", height=200, key="code_direct")
     
     if st.button("💻 Жұмысты тексеруге жіберу"):
         if student_name_direct.strip() and direct_code.strip():
             s_name = student_name_direct.strip()
-            
-            # Оқушының кодын да қауіпсіздік үшін нормализациядан (тазалаудан) өткіземіз
             cleaned_code = normalize_python_code(direct_code)
-            
             st.session_state.student_database[s_name] = cleaned_code
-            st.success(f"✅ {s_name}, сіздің кодыңыз сәтті қабылданды! Төмендегі жалпы тізімге қосылды.")
+            st.success(f"✅ {s_name}, сіздің кодыңыз қабылданды!")
             st.rerun()
         else:
-            st.warning("⚠️ Өтініш, аты-жөніңізді және код өрісін толық толтырыңыз!")
-
+            st.warning("⚠️ Аты-жөніңізді және код өрісін толтырыңыз!")
 
 # --- 5. БАЗАНЫ КӨРУ ЖӘНЕ ТАЗАЛАУ ---
 if st.session_state.student_database:
@@ -162,7 +197,7 @@ if st.session_state.student_database:
                 name1 = student_names[i]
                 name2 = student_names[j]
                 
-                # Нормализацияланған мәтіндерді салыстыру
+                # Тазаланған кодтарды өзара салыстыру
                 matcher = difflib.SequenceMatcher(None, current_db[name1], current_db[name2])
                 similarity = matcher.ratio() * 100
                 
